@@ -2,223 +2,139 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>기후 변화 분석 (폭염일수, 집중호우 포함)</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>공간 분포 중심점 시각화 (카테고리 이름 및 색상 설정)</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    body {
-      max-width: 960px;
-      margin: 40px auto;
-      font-family: 'Noto Sans KR', sans-serif;
-      padding: 0 20px;
+    body { margin: 0; padding: 0; }
+    #map { width: 100%; height: 100vh; }
+    .control-panel {
+      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      z-index: 1000; background: #fff; padding: 8px; border-radius: 4px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center;
+      gap: 12px; flex-wrap: wrap;
     }
-    h1 {
-      text-align: center;
-      margin-bottom: 20px;
+    .category-selector, .color-inputs {
+      display: flex; align-items: center; gap: 6px;
     }
-    #prediction {
-      font-weight: bold;
-      font-size: 1.1em;
-      margin-top: 20px;
-      text-align: center;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 20px;
-    }
-    th, td {
-      border: 1px solid #aaa;
-      padding: 6px;
-      text-align: center;
-    }
-    input[type="number"] {
-      width: 70px;
-      padding: 4px;
-    }
-    button {
-      margin-top: 10px;
-      padding: 6px 12px;
-      font-size: 1em;
-    }
+    .control-panel label, .control-panel span { font-size: 0.9em; }
+    .control-panel span[contenteditable] { padding: 2px 4px; border: 1px dashed #ccc; border-radius: 2px; }
+    .control-panel button { padding: 6px 12px; font-size: 0.9em; cursor: pointer; }
   </style>
 </head>
 <body>
-  <h1>기후 변화와 이상 기후 예측 (인터랙티브)</h1>
-  <table id="dataTable">
-    <thead>
-      <tr>
-        <th>연도</th>
-        <th>평균기온 (℃)</th>
-        <th>강수량 (mm)</th>
-        <th>폭염일수</th>
-        <th>집중호우일수</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
-  <button id="updateBtn">그래프 업데이트</button>
-  <canvas id="climateChart" width="900" height="400"></canvas>
-  <div id="prediction"></div>
+  <div id="map"></div>
+  <div class="control-panel">
+    <div class="category-selector">
+      <label>
+        <input type="radio" name="category" value="A" checked>
+        <span id="labelA" contenteditable="true">카테고리 A</span>
+      </label>
+      <label>
+        <input type="radio" name="category" value="B">
+        <span id="labelB" contenteditable="true">카테고리 B</span>
+      </label>
+      <label>
+        <input type="radio" name="category" value="C">
+        <span id="labelC" contenteditable="true">카테고리 C</span>
+      </label>
+    </div>
+    <div class="color-inputs">
+      <label for="colorA">색상 A:</label>
+      <input type="color" id="colorA" value="#ff0000">
+      <label for="colorB">색상 B:</label>
+      <input type="color" id="colorB" value="#00ff00">
+      <label for="colorC">색상 C:</label>
+      <input type="color" id="colorC" value="#0000ff">
+    </div>
+    <button id="computeBtnA">카테고리 A 중심점</button>
+    <button id="computeBtnB">카테고리 B 중심점</button>
+    <button id="computeBtnC">카테고리 C 중심점</button>
+    <button id="clearBtn">모두 지우기</button>
+  </div>
 
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    const years = Array.from({length: 31}, (_, i) => 1990 + i);
-    let tempData = [24.1, 24.3, 24.5, 24.2, 24.7, 24.9, 25.0, 25.2, 25.5, 25.7,
-                    25.6, 25.9, 26.0, 26.3, 26.4, 26.6, 26.7, 27.0, 27.3, 27.5,
-                    27.6, 27.8, 28.0, 28.2, 28.5, 28.7, 28.9, 29.1, 29.3, 29.5, 29.8];
-    let precipData = [300, 280, 320, 290, 310, 305, 300, 315, 320, 330,
-                      340, 335, 345, 360, 350, 355, 365, 370, 380, 390,
-                      395, 400, 410, 420, 430, 440, 445, 450, 460, 470, 480];
-    let heatDaysData = years.map(y => Math.max(0, Math.floor((y - 1990) * 0.5 + 5)));
-    let stormDaysData = years.map(y => Math.max(0, Math.floor((precipData[y-1990] - 300)/30 + 2)));
+    // 지도 초기화
+    const map = L.map('map').setView([37.5,127.0],8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ attribution:'&copy; OSM' }).addTo(map);
 
-    function fillTable() {
-      const tbody = document.querySelector('#dataTable tbody');
-      tbody.innerHTML = '';
-      for (let i = 0; i < years.length; i++) {
-        const row = document.createElement('tr');
-        row.innerHTML = `
-          <td>${years[i]}</td>
-          <td><input type="number" step="0.1" value="${tempData[i]}"></td>
-          <td><input type="number" value="${precipData[i]}"></td>
-          <td><input type="number" value="${heatDaysData[i]}"></td>
-          <td><input type="number" value="${stormDaysData[i]}"></td>
-        `;
-        tbody.appendChild(row);
-      }
+    // 데이터 저장
+    const points = { A: [], B: [], C: [] };
+    const markers = { A: [], B: [], C: [] };
+    const centroidMarkers = { A: null, B: null, C: null };
+    let colors = { A: '#ff0000', B: '#00ff00', C: '#0000ff' };
+    let names = { A: '', B: '', C: '' };
+
+    // 초기 이름 읽기
+    function updateNames() {
+      names.A = document.getElementById('labelA').textContent.trim() || 'A';
+      names.B = document.getElementById('labelB').textContent.trim() || 'B';
+      names.C = document.getElementById('labelC').textContent.trim() || 'C';
+      document.getElementById('computeBtnA').textContent = names.A + ' 중심점';
+      document.getElementById('computeBtnB').textContent = names.B + ' 중심점';
+      document.getElementById('computeBtnC').textContent = names.C + ' 중심점';
+    }
+    document.getElementById('labelA').addEventListener('blur', updateNames);
+    document.getElementById('labelB').addEventListener('blur', updateNames);
+    document.getElementById('labelC').addEventListener('blur', updateNames);
+
+    // 업데이트 색상
+    function updateColors() {
+      colors.A = document.getElementById('colorA').value;
+      colors.B = document.getElementById('colorB').value;
+      colors.C = document.getElementById('colorC').value;
+    }
+    document.getElementById('colorA').addEventListener('input', updateColors);
+    document.getElementById('colorB').addEventListener('input', updateColors);
+    document.getElementById('colorC').addEventListener('input', updateColors);
+
+    // 현재 카테고리
+    function getCurrentCategory() {
+      const sel = document.querySelector('input[name="category"]:checked');
+      return sel ? sel.value : 'A';
     }
 
-    function linearRegression(x, y) {
-      const n = x.length;
-      const meanX = x.reduce((a, b) => a + b) / n;
-      const meanY = y.reduce((a, b) => a + b) / n;
-      let num = 0, den = 0;
-      for (let i = 0; i < n; i++) {
-        num += (x[i] - meanX) * (y[i] - meanY);
-        den += (x[i] - meanX) ** 2;
-      }
-      const a = num / den;
-      const b = meanY - a * meanX;
-      return { a, b };
+    // 맵 클릭 마커 추가
+    map.on('click', e => {
+      updateColors(); updateNames();
+      const cat = getCurrentCategory();
+      const { lat, lng } = e.latlng;
+      points[cat].push([lat, lng]);
+      const marker = L.circleMarker([lat, lng], {
+        radius: 6, color: colors[cat], fillColor: colors[cat], fillOpacity: 0.8
+      }).addTo(map);
+      markers[cat].push(marker);
+    });
+
+    // 중심점 계산
+    function computeCentroid(cat) {
+      updateColors(); updateNames();
+      if (points[cat].length === 0) return alert(names[cat] + ' 포인트 없음.');
+      const sum = points[cat].reduce((a, p) => [a[0] + p[0], a[1] + p[1]], [0, 0]);
+      const center = [sum[0] / points[cat].length, sum[1] / points[cat].length];
+      if (centroidMarkers[cat]) map.removeLayer(centroidMarkers[cat]);
+      centroidMarkers[cat] = L.circleMarker(center, {
+        radius: 8, color: colors[cat], fillColor: colors[cat], fillOpacity: 0.5
+      }).addTo(map).bindPopup(names[cat] + ' 중심점').openPopup();
+      map.panTo(center);
     }
 
-    let chart = null;
-    function updateChart() {
-      const tbody = document.querySelector('#dataTable tbody');
-      tempData = [], precipData = [], heatDaysData = [], stormDaysData = [];
-      for (let row of tbody.rows) {
-        tempData.push(parseFloat(row.cells[1].firstChild.value));
-        precipData.push(parseFloat(row.cells[2].firstChild.value));
-        heatDaysData.push(parseFloat(row.cells[3].firstChild.value));
-        stormDaysData.push(parseFloat(row.cells[4].firstChild.value));
-      }
+    document.getElementById('computeBtnA').addEventListener('click', () => computeCentroid('A'));
+    document.getElementById('computeBtnB').addEventListener('click', () => computeCentroid('B'));
+    document.getElementById('computeBtnC').addEventListener('click', () => computeCentroid('C'));
 
-      const { a: aHeat, b: bHeat } = linearRegression(years, heatDaysData);
-      const { a: aStorm, b: bStorm } = linearRegression(years, stormDaysData);
-      const predHeat = aHeat * 2050 + bHeat;
-      const predStorm = aStorm * 2050 + bStorm;
+    // 리셋
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      ['A','B','C'].forEach(cat => {
+        markers[cat].forEach(m => map.removeLayer(m)); markers[cat] = [];
+        points[cat] = [];
+        if (centroidMarkers[cat]) { map.removeLayer(centroidMarkers[cat]); centroidMarkers[cat] = null; }
+      });
+    });
 
-      const ctx = document.getElementById('climateChart').getContext('2d');
-      const data = {
-        labels: years,
-        datasets: [
-          {
-            label: '기온 (℃)',
-            data: tempData,
-            borderColor: 'blue',
-            yAxisID: 'y1',
-            fill: false,
-            tension: 0.1
-          },
-          {
-            label: '강수량 (mm)',
-            data: precipData,
-            borderColor: 'green',
-            yAxisID: 'y2',
-            fill: false,
-            tension: 0.1
-          },
-          {
-            label: '폭염일수',
-            data: heatDaysData,
-            type: 'bar',
-            backgroundColor: 'red',
-            yAxisID: 'y3'
-          },
-          {
-            label: '집중호우일수',
-            data: stormDaysData,
-            type: 'bar',
-            backgroundColor: 'orange',
-            yAxisID: 'y3'
-          }
-        ]
-      };
-
-      const options = {
-        responsive: true,
-        scales: {
-          y1: { type: 'linear', position: 'left', title: { display: true, text: '기온(℃)' } },
-          y2: { type: 'linear', position: 'right', title: { display: true, text: '강수량(mm)' }, grid: { drawOnChartArea: false } },
-          y3: { type: 'linear', position: 'right', title: { display: true, text: '일수(일)' }, offset: true }
-        }
-      };
-
-      if (chart) {
-        chart.data = data;
-        chart.options = options;
-        chart.update();
-      } else {
-        chart = new Chart(ctx, { type: 'line', data, options });
-      }
-
-      document.getElementById('prediction').innerHTML = `
-        🚨 2050년 폭염일수 예측: <strong>${predHeat.toFixed(1)}일</strong><br/>
-        🚨 2050년 집중호우일수 예측: <strong>${predStorm.toFixed(1)}일</strong>
-      `;
-    }
-
-    document.getElementById('updateBtn').addEventListener('click', updateChart);
-    fillTable();
-    updateChart();
+    // 초기 세팅
+    updateNames(); updateColors();
   </script>
-
-<hr>
-<h2>🌴 열대기후 도달 시점 예측</h2>
-<p>최한월 평균기온이 18도 이상이고, 모든 달 강수량이 60mm 이상이면 열대기후로 판단합니다.</p>
-<div>
-  <label>월별 평균기온 (℃):</label><br>
-  <input id="monthlyTemps" type="text" value="2,4,9,15,20,23,27,29,25,18,10,5" style="width:100%">
-</div>
-<div>
-  <label>월별 평균강수량 (mm):</label><br>
-  <input id="monthlyRains" type="text" value="20,30,45,55,60,70,90,120,100,80,50,40" style="width:100%">
-</div>
-<br>
-<button onclick="checkTropicalClimate()">열대기후 도달 여부 확인</button>
-<p id="tropicalResult"></p>
-
-<script>
-function checkTropicalClimate() {
-  const temps = document.getElementById('monthlyTemps').value.split(',').map(Number);
-  const rains = document.getElementById('monthlyRains').value.split(',').map(Number);
-
-  const minTemp = Math.min(...temps);
-  const allRainAbove60 = rains.every(val => val >= 60);
-
-  let resultText = '';
-  if (minTemp >= 18 && allRainAbove60) {
-    resultText = '✔️ 현재 입력된 지표로 열대기후 조건을 이미 충족하고 있습니다!';
-  } else {
-    let tempNeeded = 18 - minTemp;
-    let rainNeeded = rains.map(r => (r < 60 ? 60 - r : 0)).reduce((a, b) => a + b, 0);
-    resultText = `❌ 열대기후 조건을 아직 충족하지 않았습니다.<br>`;
-    if (tempNeeded > 0) resultText += `- 최한월 평균기온을 ${tempNeeded.toFixed(1)}℃ 높여야 합니다.<br>`;
-    if (rainNeeded > 0) resultText += `- 부족한 강수량 총합: ${rainNeeded.toFixed(1)}mm`;
-  }
-
-  document.getElementById('tropicalResult').innerHTML = resultText;
-}
-</script>
-
 </body>
 </html>

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>기후 판독기 (업로드)</title>
+  <!-- TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Noto Sans KR', sans-serif;
+      max-width: 800px;
+      margin: 30px auto;
+      padding: 20px;
+      text-align: center;
+    }
+    /* 파일 선택 버튼 스타일 및 숨김 처리 */
+    input[type="file"] {
+      display: none;
+    }
+    .upload-btn {
+      display: inline-block;
+      padding: 8px 16px;
+      background-color: #007bff;
+      color: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+      text-decoration: none;
+      font-size: 1em;
+    }
+    /* 미리보기 박스 스타일 */
+    #previewBox {
+      width: 300px;
+      height: 300px;
+      border: 2px dashed #ccc;
+      margin: 20px auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3em;
+      color: #ccc;
+      position: relative;
+    }
+    /* 업로드된 이미지 스타일 */
+    #previewBox img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      display: none;
+    }
+    /* 결과 차트 영역 */
+    #resultChart {
+      max-width: 600px;
+      margin: 20px auto;
+    }
+    /* 최종 결과 텍스트 */
+    #finalResult {
+      font-size: 1.3em;
+      margin-top: 20px;
+    }
+    /* 분석 버튼 스타일 */
+    #analyzeBtn {
+      display: inline-block;
+      padding: 8px 16px;
+      background-color: #28a745;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 1em;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🌎 기후 판독기</h1>
+  <p>이미지를 업로드한 후 “분석하기” 버튼을 눌러주세요.</p>
+
+  <!-- 파일 선택 버튼 -->
+  <label for="upload" class="upload-btn">파일 선택</label>
+  <input type="file" id="upload" accept="image/*" />
+
+  <!-- 미리보기 박스 -->
+  <div id="previewBox">?</div>
+
+  <!-- 분석 버튼 -->
+  <div>
+    <button id="analyzeBtn">분석하기</button>
+  </div>
+
+  <!-- 예측 결과 차트 -->
+  <canvas id="resultChart"></canvas>
+
+  <!-- 예측 결과 텍스트 -->
+  <div id="finalResult"></div>
+
+  <script>
+    // Teachable Machine 모델 및 메타데이터 URL (마지막 슬래시 포함)
+    const MODEL_URL = "https://teachablemachine.withgoogle.com/models/fKOt3kD2E/";
+    const MODEL_JSON = MODEL_URL + "model.json";
+    const METADATA_JSON = MODEL_URL + "metadata.json";
+
+    let model, classLabels;
+    const uploadInput = document.getElementById("upload");
+    const previewBox = document.getElementById("previewBox");
+    const analyzeBtn = document.getElementById("analyzeBtn");
+    const resultCtx = document.getElementById("resultChart").getContext('2d');
+    const finalResult = document.getElementById("finalResult");
+    let chart;
+
+    // 페이지 로드 시 모델과 라벨 로드
+    window.addEventListener("DOMContentLoaded", async () => {
+      try {
+        // LayersModel 형식으로 로드
+        model = await tf.loadLayersModel(MODEL_JSON);
+        const metadata = await fetch(METADATA_JSON).then(res => res.json());
+        classLabels = metadata.labels;
+        console.log("✅ 모델 및 라벨 로딩 완료");
+      } catch (err) {
+        console.error("❌ 로딩 중 오류:", err);
+        alert("모델 또는 메타데이터 로딩에 실패했습니다. URL을 확인하세요.");
+      }
+    });
+
+    // 이미지 업로드 시 미리보기 처리 및 이전 결과 초기화
+    uploadInput.addEventListener("change", () => {
+      const file = uploadInput.files[0];
+      if (!file) return;
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(file);
+      img.onload = () => {
+        // 기존 요소 정리
+        previewBox.innerHTML = '';
+        previewBox.appendChild(img);
+        img.style.display = 'block';
+        // 결과 초기화
+        if (chart) chart.destroy();
+        finalResult.innerText = '';
+      };
+    });
+
+    // 분석 버튼 클릭 시 예측 실행
+    analyzeBtn.addEventListener("click", async () => {
+      // 업로드된 이미지 요소 찾기
+      const img = previewBox.querySelector('img');
+      if (!img) {
+        return alert("먼저 이미지를 업로드해주세요.");
+      }
+      if (!model || !classLabels) {
+        return alert("모델이 아직 준비되지 않았습니다. 잠시만 기다려주세요.");
+      }
+      try {
+        // 전처리: resize, normalize, expandDims
+        const tensor = tf.browser.fromPixels(img)
+          .resizeNearestNeighbor([224, 224])
+          .toFloat()
+          .div(tf.scalar(255.0))
+          .expandDims();
+
+        // 예측
+        const predictionTensor = model.predict(tensor);
+        const data = await predictionTensor.data();
+
+        // 메모리 해제
+        tensor.dispose();
+        predictionTensor.dispose();
+
+        // 그래프 그리기
+        if (chart) chart.destroy();
+        chart = new Chart(resultCtx, {
+          type: 'bar',
+          data: {
+            labels: classLabels,
+            datasets: [{ label: '확률 (%)', data: Array.from(data).map(v => v * 100) }]
+          },
+          options: { scales: { y: { beginAtZero: true, max: 100 } } }
+        });
+
+        // 최종 결과 표시
+        const maxIdx = data.indexOf(Math.max(...data));
+        const climate = classLabels[maxIdx];
+        const percent = (data[maxIdx] * 100).toFixed(1);
+        let emoji = '';
+        if (climate === '열대기후') emoji = '☀️';
+        else if (climate === '건조기후') emoji = '🌴';
+        else if (climate === '냉한대기후') emoji = '⛄️';
+        finalResult.innerText = `${emoji} 최종 예측: ${climate} (${percent}%)`;
+      } catch (err) {
+        console.error("❌ 예측 중 오류:", err);
+        alert("예측에 실패했습니다. 콘솔을 확인해주세요.");
+      }
+    });
+  </script>
+</body>
+</html>

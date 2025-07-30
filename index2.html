@@ -2,139 +2,208 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>공간 분포 중심점 시각화 (카테고리 이름 및 색상 설정)</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <title>입지 선정 시뮬레이터</title>
   <style>
-    body { margin: 0; padding: 0; }
-    #map { width: 100%; height: 100vh; }
-    .control-panel {
-      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
-      z-index: 1000; background: #fff; padding: 8px; border-radius: 4px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center;
-      gap: 12px; flex-wrap: wrap;
+    body {
+      font-family: 'Noto Sans KR', sans-serif;
+      margin: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
     }
-    .category-selector, .color-inputs {
-      display: flex; align-items: center; gap: 6px;
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(7, 40px);
+      grid-template-rows: repeat(7, 40px);
+      gap: 1px;
     }
-    .control-panel label, .control-panel span { font-size: 0.9em; }
-    .control-panel span[contenteditable] { padding: 2px 4px; border: 1px dashed #ccc; border-radius: 2px; }
-    .control-panel button { padding: 6px 12px; font-size: 0.9em; cursor: pointer; }
+    .cell {
+      width: 40px;
+      height: 40px;
+      font-size: 12px;
+      text-align: center;
+      line-height: 40px;
+      border: 1px solid #ccc;
+      position: relative;
+      box-sizing: border-box;
+    }
+    .road { background-color: gray !important; }
+    .conifer { background-color: green; }
+    .broadleaf { background-color: yellow; }
+    .highlight {
+      outline: 3px solid red;
+      outline-offset: -3px;
+    }
+    .legend {
+      margin-bottom: 10px;
+    }
+    .controls {
+      margin-top: 20px;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
-  <div id="map"></div>
-  <div class="control-panel">
-    <div class="category-selector">
-      <label>
-        <input type="radio" name="category" value="A" checked>
-        <span id="labelA" contenteditable="true">카테고리 A</span>
-      </label>
-      <label>
-        <input type="radio" name="category" value="B">
-        <span id="labelB" contenteditable="true">카테고리 B</span>
-      </label>
-      <label>
-        <input type="radio" name="category" value="C">
-        <span id="labelC" contenteditable="true">카테고리 C</span>
-      </label>
-    </div>
-    <div class="color-inputs">
-      <label for="colorA">색상 A:</label>
-      <input type="color" id="colorA" value="#ff0000">
-      <label for="colorB">색상 B:</label>
-      <input type="color" id="colorB" value="#00ff00">
-      <label for="colorC">색상 C:</label>
-      <input type="color" id="colorC" value="#0000ff">
-    </div>
-    <button id="computeBtnA">카테고리 A 중심점</button>
-    <button id="computeBtnB">카테고리 B 중심점</button>
-    <button id="computeBtnC">카테고리 C 중심점</button>
-    <button id="clearBtn">모두 지우기</button>
+  <h1>입지 선정 시뮬레이터</h1>
+  <div id="grid" class="grid"></div>
+  <div class="legend">※ 격자 크기: 한 변 100m</div>
+
+  <div class="controls">
+    <button onclick="generateElevation()" style="font-size: 15px; padding: 6px 14px;">임대료 생성</button>
+    <button onclick="generateRoad()" style="font-size: 15px; padding: 6px 14px;">도로 생성</button>
+    <button onclick="generateVegetation()" style="font-size: 15px; padding: 6px 14px;">상권 생성</button>
   </div>
 
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <div class="controls" style="border: 1px solid #ccc; padding: 15px; width: 340px; border-radius: 8px; background-color: #f9f9f9;">
+<h3>조건 입력</h3>
+    💰 임대료 <input type="number" id="elevationMax" value="50">만원 이하<br><span style="font-size: 12px; color: #555;">임대료 = 해당 칸의 숫자</span><br><br>
+    🛣️ 도로 <input type="number" id="roadMaxOnly" value="30">m이내<br><span style="font-size: 12px; color: #555;">도로 = 회색</span><br><br>
+    🏠 희망 상권
+    <select id="vegetationType">
+      <option value="conifer">초록마을 상권</option>
+      <option value="broadleaf">노랑마을 상권</option>
+    </select><br><span style="font-size: 12px; color: #555;"><br>
+    <button onclick="findSuitableLocations()" style="font-size: 16px; padding: 8px 18px;">실행</button>
+  </div>
+
   <script>
-    // 지도 초기화
-    const map = L.map('map').setView([37.5,127.0],8);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ attribution:'&copy; OSM' }).addTo(map);
+    const gridSize = 7;
+    const grid = document.getElementById('grid');
+    const cells = [];
 
-    // 데이터 저장
-    const points = { A: [], B: [], C: [] };
-    const markers = { A: [], B: [], C: [] };
-    const centroidMarkers = { A: null, B: null, C: null };
-    let colors = { A: '#ff0000', B: '#00ff00', C: '#0000ff' };
-    let names = { A: '', B: '', C: '' };
-
-    // 초기 이름 읽기
-    function updateNames() {
-      names.A = document.getElementById('labelA').textContent.trim() || 'A';
-      names.B = document.getElementById('labelB').textContent.trim() || 'B';
-      names.C = document.getElementById('labelC').textContent.trim() || 'C';
-      document.getElementById('computeBtnA').textContent = names.A + ' 중심점';
-      document.getElementById('computeBtnB').textContent = names.B + ' 중심점';
-      document.getElementById('computeBtnC').textContent = names.C + ' 중심점';
-    }
-    document.getElementById('labelA').addEventListener('blur', updateNames);
-    document.getElementById('labelB').addEventListener('blur', updateNames);
-    document.getElementById('labelC').addEventListener('blur', updateNames);
-
-    // 업데이트 색상
-    function updateColors() {
-      colors.A = document.getElementById('colorA').value;
-      colors.B = document.getElementById('colorB').value;
-      colors.C = document.getElementById('colorC').value;
-    }
-    document.getElementById('colorA').addEventListener('input', updateColors);
-    document.getElementById('colorB').addEventListener('input', updateColors);
-    document.getElementById('colorC').addEventListener('input', updateColors);
-
-    // 현재 카테고리
-    function getCurrentCategory() {
-      const sel = document.querySelector('input[name="category"]:checked');
-      return sel ? sel.value : 'A';
+    function createGrid() {
+      grid.innerHTML = '';
+      for (let r = 0; r < gridSize; r++) {
+        cells[r] = [];
+        for (let c = 0; c < gridSize; c++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          cell.dataset.row = r;
+          cell.dataset.col = c;
+          grid.appendChild(cell);
+          cells[r][c] = cell;
+        }
+      }
     }
 
-    // 맵 클릭 마커 추가
-    map.on('click', e => {
-      updateColors(); updateNames();
-      const cat = getCurrentCategory();
-      const { lat, lng } = e.latlng;
-      points[cat].push([lat, lng]);
-      const marker = L.circleMarker([lat, lng], {
-        radius: 6, color: colors[cat], fillColor: colors[cat], fillOpacity: 0.8
-      }).addTo(map);
-      markers[cat].push(marker);
-    });
-
-    // 중심점 계산
-    function computeCentroid(cat) {
-      updateColors(); updateNames();
-      if (points[cat].length === 0) return alert(names[cat] + ' 포인트 없음.');
-      const sum = points[cat].reduce((a, p) => [a[0] + p[0], a[1] + p[1]], [0, 0]);
-      const center = [sum[0] / points[cat].length, sum[1] / points[cat].length];
-      if (centroidMarkers[cat]) map.removeLayer(centroidMarkers[cat]);
-      centroidMarkers[cat] = L.circleMarker(center, {
-        radius: 8, color: colors[cat], fillColor: colors[cat], fillOpacity: 0.5
-      }).addTo(map).bindPopup(names[cat] + ' 중심점').openPopup();
-      map.panTo(center);
+    function generateElevation() {
+      const peakRow = Math.floor(Math.random() * gridSize);
+      const peakCol = Math.floor(Math.random() * gridSize);
+      const maxElevation = 100;
+      for (let r = 0; r < gridSize; r++) {
+        for (let c = 0; c < gridSize; c++) {
+          const distance = Math.abs(peakRow - r) + Math.abs(peakCol - c);
+          const elevation = Math.max(30, maxElevation - distance * 15 + Math.floor(Math.random() * 5));
+          cells[r][c].textContent = elevation;
+          cells[r][c].dataset.elevation = elevation;
+        }
+      }
     }
 
-    document.getElementById('computeBtnA').addEventListener('click', () => computeCentroid('A'));
-    document.getElementById('computeBtnB').addEventListener('click', () => computeCentroid('B'));
-    document.getElementById('computeBtnC').addEventListener('click', () => computeCentroid('C'));
+    function generateRoad() {
+      cells.flat().forEach(cell => cell.classList.remove('road'));
+      const directions = [[0,1], [1,0], [0,-1], [-1,0]];
+      let edgeOptions = [];
+      for (let i = 0; i < gridSize; i++) {
+        edgeOptions.push([0, i]);
+        edgeOptions.push([gridSize - 1, i]);
+        edgeOptions.push([i, 0]);
+        edgeOptions.push([i, gridSize - 1]);
+      }
+      let start = edgeOptions[Math.floor(Math.random() * edgeOptions.length)];
+      let end = edgeOptions[Math.floor(Math.random() * edgeOptions.length)];
+      while (start[0] === end[0] || start[1] === end[1]) {
+        end = edgeOptions[Math.floor(Math.random() * edgeOptions.length)];
+      }
+      let [y, x] = start;
+      cells[y][x].classList.add('road');
+      while (y !== end[0] || x !== end[1]) {
+        let options = directions.filter(([dy, dx]) => {
+          let ny = y + dy;
+          let nx = x + dx;
+          return ny >= 0 && ny < gridSize && nx >= 0 && nx < gridSize;
+        });
+        options.sort((a, b) => {
+          let da = Math.abs((y + a[0]) - end[0]) + Math.abs((x + a[1]) - end[1]);
+          let db = Math.abs((y + b[0]) - end[0]) + Math.abs((x + b[1]) - end[1]);
+          return da - db;
+        });
+        let [dy, dx] = options[0];
+        y += dy;
+        x += dx;
+        cells[y][x].classList.add('road');
+      }
+    }
 
-    // 리셋
-    document.getElementById('clearBtn').addEventListener('click', () => {
-      ['A','B','C'].forEach(cat => {
-        markers[cat].forEach(m => map.removeLayer(m)); markers[cat] = [];
-        points[cat] = [];
-        if (centroidMarkers[cat]) { map.removeLayer(centroidMarkers[cat]); centroidMarkers[cat] = null; }
+    function generateVegetation() {
+      cells.flat().forEach(cell => cell.classList.remove('conifer', 'broadleaf'));
+      let vegetationGroups = ['conifer', 'broadleaf'];
+      vegetationGroups.forEach(type => {
+        let clusterSize = Math.floor(Math.random() * 4) + 7;
+        let placed = 0;
+        const visited = new Set();
+        let queue = [];
+        while (true) {
+          let x = Math.floor(Math.random() * gridSize);
+          let y = Math.floor(Math.random() * gridSize);
+          const cell = cells[y][x];
+          if (!cell.classList.contains('road') && !cell.classList.contains('conifer') && !cell.classList.contains('broadleaf')) {
+            queue.push([y, x]);
+            break;
+          }
+        }
+        while (queue.length > 0 && placed < clusterSize) {
+          const [y, x] = queue.shift();
+          const key = y + '-' + x;
+          if (visited.has(key)) continue;
+          visited.add(key);
+          if (y >= 0 && y < gridSize && x >= 0 && x < gridSize) {
+            const cell = cells[y][x];
+            if (!cell.classList.contains('road') && !cell.classList.contains('conifer') && !cell.classList.contains('broadleaf')) {
+              cell.classList.add(type);
+              placed++;
+              queue.push([y+1, x]);
+              queue.push([y-1, x]);
+              queue.push([y, x+1]);
+              queue.push([y, x-1]);
+            }
+          }
+        }
       });
-    });
+    }
 
-    // 초기 세팅
-    updateNames(); updateColors();
+    function findSuitableLocations() {
+      const elevationMax = parseInt(document.getElementById('elevationMax').value);
+      const maxDistanceMeters = parseInt(document.getElementById('roadMaxOnly').value);
+      const vegType = document.getElementById('vegetationType').value;
+      const maxDistanceTiles = Math.floor(maxDistanceMeters / 100);
+      cells.flat().forEach(cell => cell.classList.remove('highlight'));
+      for (let r = 0; r < gridSize; r++) {
+        for (let c = 0; c < gridSize; c++) {
+          const cell = cells[r][c];
+          const elevation = parseInt(cell.dataset.elevation || 0);
+          if (elevation > elevationMax) continue;
+          if (!cell.classList.contains(vegType)) continue;
+          let minDist = Infinity;
+          for (let rr = 0; rr < gridSize; rr++) {
+            for (let cc = 0; cc < gridSize; cc++) {
+              if (cells[rr][cc].classList.contains('road')) {
+                const dist = Math.abs(rr - r) + Math.abs(cc - c);
+                minDist = Math.min(minDist, dist);
+              }
+            }
+          }
+          if (minDist <= maxDistanceTiles) {
+            cell.classList.add('highlight');
+          }
+        }
+      }
+    }
+
+    createGrid();
+    generateElevation();
+    generateRoad();
+    generateVegetation();
   </script>
 </body>
 </html>
