@@ -25,7 +25,7 @@ with open('./index3.html', 'r', encoding='utf-8') as f:
 # </html>
 
 # Box#1(4), Box#2(1)
-col1, col2 = st.columns((4,1))
+col1, col2 = st.columns((8,2))
 with col1:
     with st.expander('Video content'):
         url = 'https://www.youtube.com/watch?v=XyEOEBsa8I4'
@@ -46,7 +46,7 @@ with col1:
 
     with st.expander('Content #3 [AI-X] 기후판독기'):
         #st.write(html, unsafe_allow_html=True)
-        htmlviewer.html(html3,height=800)
+        htmlviewer.html(html3,height=950)
 
 with col2:
     with st.expander('Tips..'):
