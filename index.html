@@ -1,140 +1,432 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>공간 분포 중심점 시각화 (카테고리 이름 및 색상 설정)</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <style>
-    body { margin: 0; padding: 0; }
-    #map { width: 100%; height: 100vh; }
-    .control-panel {
-      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
-      z-index: 1000; background: #fff; padding: 8px; border-radius: 4px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center;
-      gap: 12px; flex-wrap: wrap;
-    }
-    .category-selector, .color-inputs {
-      display: flex; align-items: center; gap: 6px;
-    }
-    .control-panel label, .control-panel span { font-size: 0.9em; }
-    .control-panel span[contenteditable] { padding: 2px 4px; border: 1px dashed #ccc; border-radius: 2px; }
-    .control-panel button { padding: 6px 12px; font-size: 0.9em; cursor: pointer; }
-  </style>
+<meta charset="UTF-8" />
+<title>하천 하계망 분석</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+  :root {
+    --bg:#f0f4fa;
+    --canvas-bg:#ffffff;
+    --primary:#1f72ff;
+    --radius:10px;
+    font-family: "Apple SD Gothic Neo", system-ui, -apple-system, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body {
+    margin:0;
+    background: var(--bg);
+    color:#1e2d44;
+  }
+  .wrapper {
+    max-width: 660px;
+    margin: 32px auto;
+    padding: 0 16px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:12px;
+  }
+  h1 {
+    margin:0;
+    font-size:1.8rem;
+    font-weight:600;
+    text-align:center;
+  }
+  .controls {
+    display:flex;
+    gap:12px;
+    flex-wrap: wrap;
+    justify-content:center;
+    margin-bottom:4px;
+  }
+  button {
+    background: var(--primary);
+    color:#fff;
+    border:none;
+    padding:10px 16px;
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:600;
+    font-size:1rem;
+    min-width:140px;
+    transition:filter .2s;
+  }
+  button.secondary {
+    background:#556eaa;
+  }
+  button:active {filter:brightness(.9);}
+  .canvas-wrapper {
+    position: relative;
+    display:inline-block;
+  }
+  .label-up, .label-down {
+    position:absolute;
+    left:50%;
+    transform:translateX(-50%);
+    background:rgba(255,255,255,0.9);
+    padding:6px 14px;
+    border-radius:6px;
+    font-size:0.95rem;
+    font-weight:600;
+    color:#1f2d3a;
+    pointer-events:none;
+    box-shadow:0 6px 18px rgba(0,0,0,0.1);
+    display:none;
+    z-index:5;
+  }
+  .label-up { top:8px; }
+  .label-down { bottom:8px; }
+  #networkCanvas {
+    width:600px;
+    height:650px;
+    border-radius:8px;
+    background: var(--canvas-bg);
+    box-shadow:0 12px 28px rgba(0,0,0,0.06);
+    display:block;
+    margin-top:8px;
+  }
+  .result {
+    margin-top:6px;
+    width:600px;
+    padding:14px 16px;
+    background:#ffffff;
+    border-radius:8px;
+    border:1px solid #d3dbe8;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    gap:12px;
+  }
+  .badge {
+    background: var(--primary);
+    color:#fff;
+    padding:10px 16px;
+    border-radius:8px;
+    font-size:1.1rem;
+    font-weight:700;
+    display:inline-block;
+    text-align:center;
+  }
+</style>
 </head>
 <body>
-  <div id="map"></div>
-  <div class="control-panel">
-    <div class="category-selector">
-      <label>
-        <input type="radio" name="category" value="A" checked>
-        <span id="labelA" contenteditable="true">분류 A</span>
-      </label>
-      <label>
-        <input type="radio" name="category" value="B">
-        <span id="labelB" contenteditable="true">분류 B</span>
-      </label>
-      <label>
-        <input type="radio" name="category" value="C">
-        <span id="labelC" contenteditable="true">분류 C</span>
-      </label>
+  <div class="wrapper" aria-label="하계망 시각화 인터페이스">
+    <h1>하천 하계망 분석</h1>
+
+    <div class="controls" aria-label="버튼 컨트롤">
+      <button id="genBtn">하계망 생성</button>
+      <button id="analyzeBtn" class="secondary" disabled>하계망 분석</button>
+      <button id="resetBtn" class="secondary">초기화</button>
     </div>
-    <div class="color-inputs">
-      <label for="colorA">A:</label>
-      <input type="color" id="colorA" value="#ff0000">
-      <label for="colorB">B:</label>
-      <input type="color" id="colorB" value="#00ff00">
-      <label for="colorC">C:</label>
-      <input type="color" id="colorC" value="#0000ff">
+
+    <div class="canvas-wrapper">
+      <div class="label-up" id="labelUp">상류</div>
+      <canvas id="networkCanvas" width="600" height="650" aria-label="하계망 시각화 캔버스"></canvas>
+      <div class="label-down" id="labelDown">하류</div>
     </div>
-    <button id="computeBtnA">분류 A 중심점</button>
-    <button id="computeBtnB">분류 B 중심점</button>
-    <button id="computeBtnC">분류 C 중심점</button>
-    <button id="clearBtn">모두 지우기</button>
+
+    <div class="result" aria-live="polite">
+      <div class="badge" id="mainOrderBadge">하천 차수: -</div>
+    </div>
   </div>
 
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script>
-    // 지도 초기화
-    const map = L.map('map').setView([37.5,127.0],8);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ attribution:'&copy; OSM' }).addTo(map);
+<script>
+(() => {
+  let nodes = [];
+  let root = null;
+  let showOrders = false;
+  const canvas = document.getElementById("networkCanvas");
+  const ctx = canvas.getContext("2d");
+  const genBtn = document.getElementById("genBtn");
+  const analyzeBtn = document.getElementById("analyzeBtn");
+  const resetBtn = document.getElementById("resetBtn");
+  const mainOrderBadge = document.getElementById("mainOrderBadge");
+  const labelUp = document.getElementById("labelUp");
+  const labelDown = document.getElementById("labelDown");
+  const width = canvas.width;
+  const height = canvas.height;
+  const TAIL_LENGTH = 60;
 
-    // 데이터 저장
-    const points = { A: [], B: [], C: [] };
-    const markers = { A: [], B: [], C: [] };
-    const centroidMarkers = { A: null, B: null, C: null };
-    let colors = { A: '#ff0000', B: '#00ff00', C: '#0000ff' };
-    let names = { A: '', B: '', C: '' };
-
-    // 초기 이름 읽기
-    function updateNames() {
-      names.A = document.getElementById('labelA').textContent.trim() || 'A';
-      names.B = document.getElementById('labelB').textContent.trim() || 'B';
-      names.C = document.getElementById('labelC').textContent.trim() || 'C';
-      document.getElementById('computeBtnA').textContent = names.A + ' 중심점';
-      document.getElementById('computeBtnB').textContent = names.B + ' 중심점';
-      document.getElementById('computeBtnC').textContent = names.C + ' 중심점';
+  class Node {
+    constructor(children = []) {
+      this.children = children;
+      this.order = null;
+      this.x = 0;
+      this.y = 0;
+      this.depth = 0;
     }
-    document.getElementById('labelA').addEventListener('blur', updateNames);
-    document.getElementById('labelB').addEventListener('blur', updateNames);
-    document.getElementById('labelC').addEventListener('blur', updateNames);
+  }
 
-    // 업데이트 색상
-    function updateColors() {
-      colors.A = document.getElementById('colorA').value;
-      colors.B = document.getElementById('colorB').value;
-      colors.C = document.getElementById('colorC').value;
+  function clearState() {
+    nodes = [];
+    root = null;
+    showOrders = false;
+    mainOrderBadge.textContent = "하천 차수: -";
+    analyzeBtn.disabled = true;
+    labelUp.style.display = "none";
+    labelDown.style.display = "none";
+    drawEmpty();
+  }
+
+  function drawEmpty() {
+    ctx.clearRect(0,0,width,height);
+    ctx.save();
+    ctx.fillStyle = "#eef3f9";
+    ctx.fillRect(0,0,width,height);
+    ctx.restore();
+    ctx.font = "16px system-ui";
+    ctx.fillStyle = "#888";
+    ctx.textAlign="center";
+    ctx.fillText("하계망을 생성한 뒤 '하계망 분석'을 눌러주세요.", width/2, height/2);
+  }
+
+  function buildTree(leaves) {
+    if (leaves.length === 1) return leaves[0];
+    const split = Math.floor(Math.random() * (leaves.length - 1)) + 1;
+    const leftLeaves = leaves.slice(0, split);
+    const rightLeaves = leaves.slice(split);
+    const leftNode = buildTree(leftLeaves);
+    const rightNode = buildTree(rightLeaves);
+    const parent = new Node([leftNode, rightNode]);
+    nodes.push(parent);
+    return parent;
+  }
+
+  function generateNetwork() {
+    clearState();
+    let attempt = 0;
+    while (attempt < 25) {
+      attempt++;
+      nodes = [];
+      const sourceCount = Math.floor(Math.random() * 9) + 8;
+      const leaves = [];
+      for (let i=0;i<sourceCount;i++) {
+        const leaf = new Node([]);
+        leaves.push(leaf);
+        nodes.push(leaf);
+      }
+      root = buildTree(leaves);
+      computeDepths(root);
+      assignCoordinates(root);
+      computeStrahler(root);
+      if (root.order >=3 && root.order <=5) break;
     }
-    document.getElementById('colorA').addEventListener('input', updateColors);
-    document.getElementById('colorB').addEventListener('input', updateColors);
-    document.getElementById('colorC').addEventListener('input', updateColors);
+    labelUp.style.display = "block";
+    labelDown.style.display = "block";
+    drawNetwork();
+    analyzeBtn.disabled = false;
+    showOrders = false;
+  }
 
-    // 현재 카테고리
-    function getCurrentCategory() {
-      const sel = document.querySelector('input[name="category"]:checked');
-      return sel ? sel.value : 'A';
+  function computeDepths(node) {
+    if (node.children.length === 0) {
+      node.depth = 0;
+    } else {
+      node.children.forEach(computeDepths);
+      node.depth = Math.max(...node.children.map(c=>c.depth)) + 1;
     }
+  }
 
-    // 맵 클릭 마커 추가
-    map.on('click', e => {
-      updateColors(); updateNames();
-      const cat = getCurrentCategory();
-      const { lat, lng } = e.latlng;
-      points[cat].push([lat, lng]);
-      const marker = L.circleMarker([lat, lng], {
-        radius: 6, color: colors[cat], fillColor: colors[cat], fillOpacity: 0.8
-      }).addTo(map);
-      markers[cat].push(marker);
+  function assignCoordinates(rootNode) {
+    const leaves = nodes.filter(n=>n.children.length===0);
+    const margin = 50;
+    const usableWidth = width - margin*2;
+    leaves.forEach((leaf,i)=>{
+      leaf.x = margin + (i/(leaves.length-1 || 1))*usableWidth;
+      leaf.y = 60;
+    });
+    function dfs(n) {
+      if (n.children.length === 0) return;
+      n.children.forEach(dfs);
+      n.x = n.children.reduce((s,c)=>s+c.x,0)/n.children.length;
+      const maxDepth = Math.max(...nodes.map(n=>n.depth));
+      const totalAvailable = height - 140 - TAIL_LENGTH;
+      const step = totalAvailable / (maxDepth + 1);
+      n.y = 60 + (n.depth)*step;
+    }
+    dfs(rootNode);
+  }
+
+  function computeStrahler(node) {
+    if (node.children.length === 0) {
+      node.order = 1;
+      return 1;
+    }
+    const childOrders = node.children.map(computeStrahler);
+    const maxOrder = Math.max(...childOrders);
+    const countMax = childOrders.filter(o=>o===maxOrder).length;
+    node.order = (countMax >=2) ? maxOrder +1 : maxOrder;
+    return node.order;
+  }
+
+  function getMainChannelPath(node) {
+    let path = [node];
+    while (node.children.length > 0) {
+      node = node.children.slice().sort((a,b)=>b.order - a.order)[0];
+      path.push(node);
+    }
+    return path;
+  }
+
+  function drawNetwork(highlightPath=[]) {
+    if (!highlightPath || highlightPath.length===0) {
+      if (root) highlightPath = getMainChannelPath(root);
+    }
+    ctx.clearRect(0,0,width,height);
+    ctx.save();
+    ctx.fillStyle = "#f8fafd";
+    ctx.fillRect(0,0,width,height);
+    ctx.restore();
+
+    const maxDepth = Math.max(...nodes.map(n=>n.depth));
+
+    nodes.forEach(n=>{
+      if (n.children.length > 0) {
+        n.children.forEach(child=>{
+          const startX = child.x;
+          const startY = child.y;
+          const endX = n.x;
+          const endY = n.y;
+          const isMainEdge = highlightPath.includes(n) && highlightPath.includes(child) &&
+                             highlightPath.indexOf(child) === highlightPath.indexOf(n)+1;
+
+          const depthFactor = maxDepth > 0 ? (n.depth / maxDepth) : 0;
+          let lineWidth = 2 + depthFactor * 6 + ((n.order || 1) * 0.3);
+          if (isMainEdge) lineWidth += 2;
+
+          ctx.lineWidth = lineWidth;
+          ctx.lineCap = "round";
+
+          let color = getColor(n.order || 1);
+          if (isMainEdge) color = shadeColor(color, -18);
+          ctx.strokeStyle = color;
+
+          const midX = (startX + endX)/2;
+          const midY = (startY + endY)/2;
+          const dx = endX - startX;
+          const dy = endY - startY;
+          const len = Math.hypot(dx, dy) || 1;
+          const perpX = -dy / len;
+          const perpY = dx / len;
+          const amplitude = Math.min(25, len * 0.06);
+          const randomness = 0;
+          const controlX = midX + perpX * amplitude * randomness;
+          const controlY = midY + perpY * amplitude * randomness;
+
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.quadraticCurveTo(controlX, controlY, endX, endY);
+          ctx.stroke();
+        });
+      }
     });
 
-    // 중심점 계산
-    function computeCentroid(cat) {
-      updateColors(); updateNames();
-      if (points[cat].length === 0) return alert(names[cat] + ' 포인트 없음.');
-      const sum = points[cat].reduce((a, p) => [a[0] + p[0], a[1] + p[1]], [0, 0]);
-      const center = [sum[0] / points[cat].length, sum[1] / points[cat].length];
-      if (centroidMarkers[cat]) map.removeLayer(centroidMarkers[cat]);
-      centroidMarkers[cat] = L.circleMarker(center, {
-        radius: 8, color: colors[cat], fillColor: colors[cat], fillOpacity: 0.5
-      }).addTo(map).bindPopup(names[cat] + ' 중심점').openPopup();
-      map.panTo(center);
-    }
+    nodes.forEach(n=>{
+      ctx.save();
+      if (n.children.length > 0) {
+        const r = 6;
+        ctx.beginPath();
+        const fill = getColor(n.order || 1);
+        ctx.fillStyle = fill;
+        ctx.shadowColor = fill;
+        ctx.shadowBlur = 12;
+        ctx.arc(n.x, n.y, r, 0, Math.PI*2);
+        ctx.fill();
+      } else {
+        const r = 4;
+        ctx.beginPath();
+        ctx.fillStyle = "rgba(102,178,255,0.6)";
+        ctx.arc(n.x, n.y, r, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.restore();
+    });
 
-    document.getElementById('computeBtnA').addEventListener('click', () => computeCentroid('A'));
-    document.getElementById('computeBtnB').addEventListener('click', () => computeCentroid('B'));
-    document.getElementById('computeBtnC').addEventListener('click', () => computeCentroid('C'));
-
-    // 리셋
-    document.getElementById('clearBtn').addEventListener('click', () => {
-      ['A','B','C'].forEach(cat => {
-        markers[cat].forEach(m => map.removeLayer(m)); markers[cat] = [];
-        points[cat] = [];
-        if (centroidMarkers[cat]) { map.removeLayer(centroidMarkers[cat]); centroidMarkers[cat] = null; }
+    if (showOrders) {
+      nodes.forEach(n=>{
+        if (n.order != null) {
+          ctx.save();
+          ctx.font = "12px system-ui";
+          ctx.fillStyle = "#1e2d44";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          const offsetX = 10;
+          const offsetY = -12;
+          ctx.fillText(`${n.order}`, n.x + offsetX, n.y + offsetY);
+          ctx.restore();
+        }
       });
-    });
+    }
 
-    // 초기 세팅
-    updateNames(); updateColors();
-  </script>
+    if (root) {
+      const tailStartX = root.x;
+      const tailStartY = root.y;
+      const tailEndX = root.x;
+      const tailEndY = root.y + TAIL_LENGTH;
+      ctx.save();
+      ctx.lineWidth = 8 + (root.order || 1);
+      ctx.lineCap = "round";
+      let tailColor = shadeColor(getColor(root.order || 1), -10);
+      ctx.strokeStyle = tailColor;
+      ctx.beginPath();
+      ctx.moveTo(tailStartX, tailStartY);
+      ctx.lineTo(tailEndX, tailEndY);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  function shadeColor(color, percent) {
+    try {
+      let f=color.slice(1), t=percent<0?0:255, p=Math.abs(percent)/100;
+      let R=parseInt(f.slice(0,2),16),
+          G=parseInt(f.slice(2,4),16),
+          B=parseInt(f.slice(4,6),16);
+      let newR = Math.round((t - R)*p + R);
+      let newG = Math.round((t - G)*p + G);
+      let newB = Math.round((t - B)*p + B);
+      return "#" + ((1<<24) + (newR<<16) + (newG<<8) + newB).toString(16).slice(1);
+    } catch {
+      return color;
+    }
+  }
+
+  function getColor(order) {
+    const palette = {
+      1: "#cde7ff",
+      2: "#89c8ff",
+      3: "#4e9eff",
+      4: "#1f72ff",
+      5: "#0f4fcf"
+    };
+    if (order <= 1) return palette[1];
+    if (order in palette) return palette[order];
+    return "#0b3c9f";
+  }
+
+  function performAnalysis() {
+    if (!root) return;
+    computeStrahler(root);
+    showOrders = true;
+    drawNetwork(getMainChannelPath(root));
+    const rootOrder = root.order;
+    mainOrderBadge.textContent = `하천 차수: ${rootOrder}차 하천`;
+  }
+
+  genBtn.addEventListener("click", ()=> {
+    generateNetwork();
+  });
+  analyzeBtn.addEventListener("click", ()=>{
+    performAnalysis();
+    analyzeBtn.disabled = false;
+  });
+  resetBtn.addEventListener("click", ()=>{
+    clearState();
+  });
+
+  drawEmpty();
+})();
+</script>
 </body>
 </html>
