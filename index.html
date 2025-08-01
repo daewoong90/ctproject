@@ -12,14 +12,15 @@
     --radius:10px;
     font-family: "Apple SD Gothic Neo", system-ui, -apple-system, sans-serif;
   }
-  *{box-sizing:border-box;}
+  * { box-sizing:border-box; }
   body {
     margin:0;
     background: var(--bg);
     color:#1e2d44;
   }
   .wrapper {
-    max-width: 660px;
+    width:100%;
+    max-width: 820px;
     margin: 32px auto;
     padding: 0 16px;
     display:flex;
@@ -55,10 +56,12 @@
   button.secondary {
     background:#556eaa;
   }
-  button:active {filter:brightness(.9);}
+  button:active { filter:brightness(.9); }
   .canvas-wrapper {
     position: relative;
     display:inline-block;
+    width:100%;
+    max-width:760px;
   }
   .label-up, .label-down {
     position:absolute;
@@ -78,8 +81,8 @@
   .label-up { top:8px; }
   .label-down { bottom:8px; }
   #networkCanvas {
-    width:600px;
-    height:650px;
+    width:100%;
+    aspect-ratio: 760 / 650;
     border-radius:8px;
     background: var(--canvas-bg);
     box-shadow:0 12px 28px rgba(0,0,0,0.06);
@@ -88,7 +91,8 @@
   }
   .result {
     margin-top:6px;
-    width:600px;
+    width:100%;
+    max-width:760px;
     padding:14px 16px;
     background:#ffffff;
     border-radius:8px;
@@ -122,7 +126,7 @@
 
     <div class="canvas-wrapper">
       <div class="label-up" id="labelUp">상류</div>
-      <canvas id="networkCanvas" width="600" height="650" aria-label="하계망 시각화 캔버스"></canvas>
+      <canvas id="networkCanvas" aria-label="하계망 시각화 캔버스"></canvas>
       <div class="label-down" id="labelDown">하류</div>
     </div>
 
@@ -136,6 +140,9 @@
   let nodes = [];
   let root = null;
   let showOrders = false;
+  let lastHighlightPath = [];
+  let displayWidth = 760;
+  let displayHeight = 650;
   const canvas = document.getElementById("networkCanvas");
   const ctx = canvas.getContext("2d");
   const genBtn = document.getElementById("genBtn");
@@ -144,8 +151,6 @@
   const mainOrderBadge = document.getElementById("mainOrderBadge");
   const labelUp = document.getElementById("labelUp");
   const labelDown = document.getElementById("labelDown");
-  const width = canvas.width;
-  const height = canvas.height;
   const TAIL_LENGTH = 60;
 
   class Node {
@@ -158,10 +163,32 @@
     }
   }
 
+  function updateCanvasSize() {
+    const rect = canvas.getBoundingClientRect();
+    displayWidth = rect.width;
+    displayHeight = rect.height;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.floor(displayWidth * dpr);
+    canvas.height = Math.floor(displayHeight * dpr);
+    ctx.resetTransform();
+    ctx.scale(dpr, dpr);
+    if (root) {
+      assignCoordinates(root);
+      if (showOrders) {
+        drawNetwork(lastHighlightPath);
+      } else {
+        drawNetwork();
+      }
+    } else {
+      drawEmpty();
+    }
+  }
+
   function clearState() {
     nodes = [];
     root = null;
     showOrders = false;
+    lastHighlightPath = [];
     mainOrderBadge.textContent = "하천 차수: -";
     analyzeBtn.disabled = true;
     labelUp.style.display = "none";
@@ -170,15 +197,15 @@
   }
 
   function drawEmpty() {
-    ctx.clearRect(0,0,width,height);
+    ctx.clearRect(0,0,displayWidth,displayHeight);
     ctx.save();
     ctx.fillStyle = "#eef3f9";
-    ctx.fillRect(0,0,width,height);
+    ctx.fillRect(0,0,displayWidth,displayHeight);
     ctx.restore();
     ctx.font = "16px system-ui";
     ctx.fillStyle = "#888";
     ctx.textAlign="center";
-    ctx.fillText("하계망을 생성한 뒤 '하계망 분석'을 눌러주세요.", width/2, height/2);
+    ctx.fillText("하계망을 생성한 뒤 '하계망 분석'을 눌러주세요.", displayWidth/2, displayHeight/2);
   }
 
   function buildTree(leaves) {
@@ -214,6 +241,7 @@
     }
     labelUp.style.display = "block";
     labelDown.style.display = "block";
+    lastHighlightPath = [];
     drawNetwork();
     analyzeBtn.disabled = false;
     showOrders = false;
@@ -231,7 +259,7 @@
   function assignCoordinates(rootNode) {
     const leaves = nodes.filter(n=>n.children.length===0);
     const margin = 50;
-    const usableWidth = width - margin*2;
+    const usableWidth = displayWidth - margin*2;
     leaves.forEach((leaf,i)=>{
       leaf.x = margin + (i/(leaves.length-1 || 1))*usableWidth;
       leaf.y = 60;
@@ -241,8 +269,8 @@
       n.children.forEach(dfs);
       n.x = n.children.reduce((s,c)=>s+c.x,0)/n.children.length;
       const maxDepth = Math.max(...nodes.map(n=>n.depth));
-      const totalAvailable = height - 140 - TAIL_LENGTH;
-      const step = totalAvailable / (maxDepth + 1);
+      const totalAvailable = displayHeight - 140 - TAIL_LENGTH;
+      const step = maxDepth > 0 ? totalAvailable / (maxDepth + 1) : 0;
       n.y = 60 + (n.depth)*step;
     }
     dfs(rootNode);
@@ -270,13 +298,14 @@
   }
 
   function drawNetwork(highlightPath=[]) {
-    if (!highlightPath || highlightPath.length===0) {
+    if (!highlightPath || highlightPath.length === 0) {
       if (root) highlightPath = getMainChannelPath(root);
     }
-    ctx.clearRect(0,0,width,height);
+    lastHighlightPath = highlightPath.slice();
+    ctx.clearRect(0,0,displayWidth,displayHeight);
     ctx.save();
     ctx.fillStyle = "#f8fafd";
-    ctx.fillRect(0,0,width,height);
+    ctx.fillRect(0,0,displayWidth,displayHeight);
     ctx.restore();
 
     const maxDepth = Math.max(...nodes.map(n=>n.depth));
@@ -310,9 +339,8 @@
           const perpX = -dy / len;
           const perpY = dx / len;
           const amplitude = Math.min(25, len * 0.06);
-          const randomness = 0;
-          const controlX = midX + perpX * amplitude * randomness;
-          const controlY = midY + perpY * amplitude * randomness;
+          const controlX = midX + perpX * amplitude * 0;
+          const controlY = midY + perpY * amplitude * 0;
 
           ctx.beginPath();
           ctx.moveTo(startX, startY);
@@ -347,12 +375,12 @@
       nodes.forEach(n=>{
         if (n.order != null) {
           ctx.save();
-          ctx.font = "12px system-ui";
+          ctx.font = "bold 16px system-ui";
           ctx.fillStyle = "#1e2d44";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          const offsetX = 10;
-          const offsetY = -12;
+          const offsetX = 14;
+          const offsetY = -16;
           ctx.fillText(`${n.order}`, n.x + offsetX, n.y + offsetY);
           ctx.restore();
         }
@@ -424,6 +452,9 @@
   resetBtn.addEventListener("click", ()=>{
     clearState();
   });
+
+  window.addEventListener("load", updateCanvasSize);
+  window.addEventListener("resize", updateCanvasSize);
 
   drawEmpty();
 })();
