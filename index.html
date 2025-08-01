@@ -89,6 +89,12 @@
     display:block;
     margin-top:8px;
   }
+  /* 모바일(좁은 화면)에서는 세로를 두 배로 늘림 */
+  @media (max-width: 800px) {
+    #networkCanvas {
+      aspect-ratio: 760 / 1300;
+    }
+  }
   .result {
     margin-top:6px;
     width:100%;
@@ -339,8 +345,8 @@
           const perpX = -dy / len;
           const perpY = dx / len;
           const amplitude = Math.min(25, len * 0.06);
-          const controlX = midX + perpX * amplitude * 0;
-          const controlY = midY + perpY * amplitude * 0;
+          const controlX = midX;
+          const controlY = midY;
 
           ctx.beginPath();
           ctx.moveTo(startX, startY);
@@ -375,7 +381,7 @@
       nodes.forEach(n=>{
         if (n.order != null) {
           ctx.save();
-          ctx.font = "bold 16px system-ui";
+          ctx.font = "bold 18px system-ui";
           ctx.fillStyle = "#1e2d44";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
