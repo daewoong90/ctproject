@@ -195,7 +195,7 @@
     root = null;
     showOrders = false;
     lastHighlightPath = [];
-    mainOrderBadge.textContent = "하천 차수: -";
+    mainOrderBadge.textContent = "하천 차수: ?";
     analyzeBtn.disabled = true;
     labelUp.style.display = "none";
     labelDown.style.display = "none";
@@ -211,7 +211,7 @@
     ctx.font = "16px system-ui";
     ctx.fillStyle = "#888";
     ctx.textAlign="center";
-    ctx.fillText("하계망을 생성한 뒤 '하계망 분석'을 눌러주세요.", displayWidth/2, displayHeight/2);
+    ctx.fillText("하계망을 생성해주세요.", displayWidth/2, displayHeight/2);
   }
 
   function buildTree(leaves) {
