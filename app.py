@@ -42,7 +42,7 @@ with col1:
 
     with st.expander('Content #1 [CT1] 하천 하계망 분석'):
         #st.write(html, unsafe_allow_html=True)
-        htmlviewer.html(html1,height=880)
+        htmlviewer.html(html1,height=1100)
 
     with st.expander('Content #2 [CT2] 카페 입지 선정하기'):
         #st.write(html, unsafe_allow_html=True)

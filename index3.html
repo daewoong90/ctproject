@@ -2,10 +2,9 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>기후 판독기 (업로드)</title>
-  <!-- TensorFlow.js -->
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>기후경관 판독기 (업로드)</title>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body {
@@ -15,10 +14,7 @@
       padding: 20px;
       text-align: center;
     }
-    /* 파일 선택 버튼 스타일 및 숨김 처리 */
-    input[type="file"] {
-      display: none;
-    }
+    input[type="file"] { display: none; }
     .upload-btn {
       display: inline-block;
       padding: 8px 16px;
@@ -28,38 +24,42 @@
       cursor: pointer;
       text-decoration: none;
       font-size: 1em;
+      margin-bottom: 8px;
     }
-    /* 미리보기 박스 스타일 */
     #previewBox {
       width: 300px;
       height: 300px;
       border: 2px dashed #ccc;
-      margin: 20px auto;
+      margin: 10px auto;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 3em;
       color: #ccc;
       position: relative;
+      background: #fafafa;
+      box-sizing: border-box;
     }
-    /* 업로드된 이미지 스타일 */
     #previewBox img {
       max-width: 100%;
       max-height: 100%;
       object-fit: contain;
       display: none;
     }
-    /* 결과 차트 영역 */
     #resultChart {
       max-width: 600px;
       margin: 20px auto;
     }
-    /* 최종 결과 텍스트 */
     #finalResult {
       font-size: 1.3em;
       margin-top: 20px;
+      font-weight: bold;
     }
-    /* 분석 버튼 스타일 */
+    #status {
+      margin-top: 8px;
+      font-size: 0.9em;
+      color: #555;
+    }
     #analyzeBtn {
       display: inline-block;
       padding: 8px 16px;
@@ -71,32 +71,44 @@
       cursor: pointer;
       margin-top: 10px;
     }
+    #analyzeBtn:disabled {
+      background-color: #999;
+      cursor: not-allowed;
+    }
+    /* 모바일에서 previewBox 축소 대응 */
+    @media (max-width: 640px) {
+      #previewBox {
+        width: 90vw;
+        max-width: 300px;
+        height: auto;
+        aspect-ratio: 1 / 1;
+        font-size: 2.5em;
+        padding: 5px;
+      }
+    }
   </style>
 </head>
 <body>
-  <h1>🌎 기후 판독기</h1>
+  <h1>🌎 기후경관 판독기</h1>
   <p>이미지를 업로드한 후 “분석하기” 버튼을 눌러주세요.</p>
 
-  <!-- 파일 선택 버튼 -->
-  <label for="upload" class="upload-btn">파일 선택</label>
-  <input type="file" id="upload" accept="image/*" />
-
-  <!-- 미리보기 박스 -->
-  <div id="previewBox">?</div>
-
-  <!-- 분석 버튼 -->
   <div>
-    <button id="analyzeBtn">분석하기</button>
+    <label for="upload" class="upload-btn">파일 선택</label>
+    <input type="file" id="upload" accept="image/*" />
   </div>
 
-  <!-- 예측 결과 차트 -->
-  <canvas id="resultChart"></canvas>
+  <div id="previewBox">?</div>
 
-  <!-- 예측 결과 텍스트 -->
+  <div>
+    <button id="analyzeBtn" disabled>분석하기</button>
+  </div>
+  <div id="status">모델 로딩 중...</div>
+
+  <canvas id="resultChart"></canvas>
   <div id="finalResult"></div>
 
+  <!-- 이하 스크립트는 기존과 동일하게 유지 -->
   <script>
-    // Teachable Machine 모델 및 메타데이터 URL (마지막 슬래시 포함)
     const MODEL_URL = "https://teachablemachine.withgoogle.com/models/fKOt3kD2E/";
     const MODEL_JSON = MODEL_URL + "model.json";
     const METADATA_JSON = MODEL_URL + "metadata.json";
@@ -105,79 +117,107 @@
     const uploadInput = document.getElementById("upload");
     const previewBox = document.getElementById("previewBox");
     const analyzeBtn = document.getElementById("analyzeBtn");
+    const statusEl = document.getElementById("status");
     const resultCtx = document.getElementById("resultChart").getContext('2d');
     const finalResult = document.getElementById("finalResult");
     let chart;
 
-    // 페이지 로드 시 모델과 라벨 로드
-    window.addEventListener("DOMContentLoaded", async () => {
-      try {
-        // LayersModel 형식으로 로드
-        model = await tf.loadLayersModel(MODEL_JSON);
-        const metadata = await fetch(METADATA_JSON).then(res => res.json());
-        classLabels = metadata.labels;
-        console.log("✅ 모델 및 라벨 로딩 완료");
-      } catch (err) {
-        console.error("❌ 로딩 중 오류:", err);
-        alert("모델 또는 메타데이터 로딩에 실패했습니다. URL을 확인하세요.");
-      }
-    });
+    let imageLoaded = false;
+    let modelReady = false;
 
-    // 이미지 업로드 시 미리보기 처리 및 이전 결과 초기화
+    async function loadModelAndLabels() {
+      try {
+        model = await tf.loadLayersModel(MODEL_JSON);
+        const metadata = await fetch(METADATA_JSON).then(res => {
+          if (!res.ok) throw new Error("metadata.json 불러오기 실패");
+          return res.json();
+        });
+        classLabels = metadata.labels;
+        modelReady = true;
+        statusEl.innerText = "모델 준비 완료.";
+        updateAnalyzeState();
+        console.log("✅ 모델 및 라벨 로딩 완료", classLabels);
+      } catch (err) {
+        console.error("모델 또는 메타데이터 로딩 오류:", err);
+        statusEl.innerText = "모델 로딩 실패. 콘솔 확인.";
+        alert("모델 또는 메타데이터를 불러오는 데 실패했습니다. URL과 네트워크를 확인하세요.");
+      }
+    }
+
+    loadModelAndLabels();
+
+    function updateAnalyzeState() {
+      analyzeBtn.disabled = !(modelReady && imageLoaded);
+    }
+
     uploadInput.addEventListener("change", () => {
       const file = uploadInput.files[0];
       if (!file) return;
+      if (!file.type.startsWith("image/")) {
+        alert("이미지 파일을 선택해주세요.");
+        return;
+      }
       const img = document.createElement('img');
       img.src = URL.createObjectURL(file);
+      img.alt = "업로드된 이미지";
       img.onload = () => {
-        // 기존 요소 정리
         previewBox.innerHTML = '';
         previewBox.appendChild(img);
         img.style.display = 'block';
-        // 결과 초기화
-        if (chart) chart.destroy();
+        imageLoaded = true;
         finalResult.innerText = '';
+        if (chart) chart.destroy();
+        updateAnalyzeState();
+      };
+      img.onerror = () => {
+        alert("이미지를 불러오는 데 문제가 생겼습니다.");
       };
     });
 
-    // 분석 버튼 클릭 시 예측 실행
     analyzeBtn.addEventListener("click", async () => {
-      // 업로드된 이미지 요소 찾기
       const img = previewBox.querySelector('img');
       if (!img) {
-        return alert("먼저 이미지를 업로드해주세요.");
+        alert("먼저 이미지를 업로드해주세요.");
+        return;
       }
-      if (!model || !classLabels) {
-        return alert("모델이 아직 준비되지 않았습니다. 잠시만 기다려주세요.");
+      if (!modelReady) {
+        alert("모델이 아직 준비되지 않았습니다.");
+        return;
       }
       try {
-        // 전처리: resize, normalize, expandDims
+        statusEl.innerText = "분석 중...";
         const tensor = tf.browser.fromPixels(img)
           .resizeNearestNeighbor([224, 224])
           .toFloat()
           .div(tf.scalar(255.0))
           .expandDims();
 
-        // 예측
         const predictionTensor = model.predict(tensor);
         const data = await predictionTensor.data();
 
-        // 메모리 해제
         tensor.dispose();
         predictionTensor.dispose();
 
-        // 그래프 그리기
         if (chart) chart.destroy();
         chart = new Chart(resultCtx, {
           type: 'bar',
           data: {
             labels: classLabels,
-            datasets: [{ label: '확률 (%)', data: Array.from(data).map(v => v * 100) }]
+            datasets: [{
+              label: '확률 (%)',
+              data: Array.from(data).map(v => v * 100)
+            }]
           },
-          options: { scales: { y: { beginAtZero: true, max: 100 } } }
+          options: {
+            scales: {
+              y: { beginAtZero: true, max: 100 }
+            },
+            plugins: {
+              legend: { display: false }
+            }
+          }
         });
 
-        // 최종 결과 표시
         const maxIdx = data.indexOf(Math.max(...data));
         const climate = classLabels[maxIdx];
         const percent = (data[maxIdx] * 100).toFixed(1);
@@ -186,9 +226,11 @@
         else if (climate === '건조기후') emoji = '🌴';
         else if (climate === '냉한대기후') emoji = '⛄️';
         finalResult.innerText = `${emoji} 최종 예측: ${climate} (${percent}%)`;
+        statusEl.innerText = "분석 완료";
       } catch (err) {
-        console.error("❌ 예측 중 오류:", err);
-        alert("예측에 실패했습니다. 콘솔을 확인해주세요.");
+        console.error("예측 오류:", err);
+        statusEl.innerText = "분석 실패";
+        alert("예측 중 오류가 발생했습니다. 콘솔을 확인하세요.");
       }
     });
   </script>
