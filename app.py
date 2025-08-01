@@ -48,7 +48,7 @@ with col1:
         #st.write(html, unsafe_allow_html=True)
         htmlviewer.html(html2,height=900)
 
-    with st.expander('Content #3 [AI-X] 기후판독기'):
+    with st.expander('Content #3 [AI-X] 기후경관 판독기'):
         #st.write(html, unsafe_allow_html=True)
         htmlviewer.html(html3,height=950)
 
